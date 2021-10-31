@@ -1,10 +1,25 @@
-name: 'Hello World'
-description: 'Greet someone'
+name: 'Deployer'
+description: 'Builds, Ships and optionally Deploys docker containers to a kubernetes cluster'
 inputs:
-  who-to-greet:  # id of input
-    description: 'Who to greet'
+  REPOSITORY_LOCATION:
+    description: 'The location of the docker compatible repository'
+    required: false
+    default: us-central1
+  REGISTRY_SA_KEY:
+    description: 'Service Account Key to push images to the repository'
     required: true
-    default: 'World'
+  PROJECT_ID:
+    description: 'GCP Project ID'
+    required: true
+  REPOSITORY:
+    description: 'Image Repository'
+    required: true
+  IMAGE:
+    description: 'Image to be pushed'
+    required: true
+  TAG:
+    description: 'Image tag'
+    required: true
 outputs:
   random-number:
     description: "Random number"
@@ -12,10 +27,21 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - run: echo Hello ${{ inputs.who-to-greet }}.
-      shell: bash
-    - id: random-number-generator
-      run: echo "::set-output name=random-id::$(echo $RANDOM)"
-      shell: bash
-    - run: ${{ github.action_path }}/goodbye.sh
-      shell: bash
+    # - run: echo Hello ${{ inputs.who-to-greet }}.
+    #   shell: bash
+    # - id: random-number-generator
+    #   run: echo "::set-output name=random-id::$(echo $RANDOM)"
+    #   shell: bash
+    # - run: ${{ github.action_path }}/goodbye.sh
+    #   shell: bash
+
+    - name: Login to Google Artifact Registry
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev
+        username: _json_key
+        password: ${{ inputs.REGISTRY_SA_KEY }}
+
+    - name: Push to Google Artifact Registry
+      run: |
+        docker push ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}
