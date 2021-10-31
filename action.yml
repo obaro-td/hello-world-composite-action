@@ -43,5 +43,6 @@ runs:
         password: ${{ inputs.REGISTRY_SA_KEY }}
 
     - name: Push to Google Artifact Registry
+      shell: bash
       run: |
         docker push ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}
