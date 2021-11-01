@@ -1,0 +1,111 @@
+name: 'Deployer'
+description: 'Builds, Deliver and optionally Deploys docker containers to a kubernetes cluster'
+inputs:
+  REPOSITORY_LOCATION:
+    description: 'The location of the google artifactory repository'
+    required: false
+    default: us-central1
+  REGISTRY_SA_KEY:
+    description: 'Service Account Key to push images to the google artifactory repository'
+    required: true
+  PROJECT_ID:
+    description: 'GCP Project ID'
+    required: true
+  REPOSITORY:
+    description: 'Image Repository'
+    required: true
+  IMAGE:
+    description: 'Image to be pushed'
+    required: true
+  TAG:
+    description: 'Image tag'
+    required: true
+  GO_VERSION:
+    description: 'Go version'
+    required: false
+    default: 1.16
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Setup Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ inputs.GO_VERSION }}
+
+    - name: Install Go Dependencies
+      run: go version
+
+    - name: Install Go Dependencies
+      run: echo "{{ input.}}""
+
+    - name: Versioning
+      if: ${{ inputs.VERSIONING }}
+      shell: bash
+      run: |
+        echo "ENV=$(echo ${GITHUB_REF##*/})" >> $GITHUB_ENV
+        echo "NODE_ENV=$(echo ${GITHUB_REF##*/})" >> $GITHUB_ENV
+        echo ::set-output name=app_version::$(make version)
+      
+    - name: Version Bump
+      if: ${{ inputs.VERSION_BUMPING }}
+
+
+                  - name: Setting Version Bump level to Minor
+                    if: startswith(github.event.commits[0].message, 'feature')
+                    run: |
+                      echo "BUMP=minor" >> $GITHUB_ENV
+                  - name: Setting Version Bump level to Major
+                    if: startswith(github.event.commits[0].message, 'release')
+                    run: |
+                      echo "BUMP=major" >> $GITHUB_ENV
+                  - name: Bump Version
+                    id: bump_version
+                    run: |
+                      echo "::set-output name=version::$(make bump)"
+                  - name: Setting Env With Version
+                    id: get_version_name
+                    run: |
+                      echo ::set-output name=app_version::$(make version)
+                  - name: Commit files
+                    run: |
+                      git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                      git config --local user.name "github-actions[bot]"
+                      git commit -m "Bump version to ${{ steps.bump_version.outputs.version }}" -a
+                  - name: Push changes
+                    uses: ad-m/github-push-action@v0.6.0
+                    with:
+                      github_token: ${{ secrets.GITHUB_TOKEN }}
+                      branch: ${{ github.ref }}
+  
+    - name: Building
+      if: ${{ inputs.BUILDING }}
+      run: make docker-image
+  
+    - name: Login to Google Artifact Registry
+      if: ${{ inputs.DELIVERING }}
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev
+        username: _json_key
+        password: ${{ inputs.REGISTRY_SA_KEY }}
+
+    - name: Push to Google Artifact Registry
+      if: ${{ inputs.DELIVERING }}
+      shell: bash
+      run: |
+        docker push ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}
+
+    - name: Deploys to Kubernetes Cluster
+      if: ${{ inputs.DEPLOYING }}
+      shell: bash
+      run: |
+        docker push ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}
+
+    - name: Send Slack Notification
+      if: ${{ inputs.NOTIFYING_SLACK }}
+      shell: bash
+      run: |
+        echo "Send Slack Notification ${{ inputs.SLACK_CHANNEL_ID }}"

@@ -1,12 +1,12 @@
 name: 'Deployer'
-description: 'Builds, Ships and optionally Deploys docker containers to a kubernetes cluster'
+description: 'Builds, Deliver and optionally Deploys docker containers to a kubernetes cluster'
 inputs:
   REPOSITORY_LOCATION:
-    description: 'The location of the docker compatible repository'
+    description: 'The location of the google artifactory repository'
     required: false
     default: us-central1
   REGISTRY_SA_KEY:
-    description: 'Service Account Key to push images to the repository'
+    description: 'Service Account Key to push images to the google artifactory repository'
     required: true
   PROJECT_ID:
     description: 'GCP Project ID'
@@ -20,22 +20,52 @@ inputs:
   TAG:
     description: 'Image tag'
     required: true
-outputs:
-  random-number:
-    description: "Random number"
-    value: ${{ steps.random-number-generator.outputs.random-id }}
+  GO_VERSION:
+    description: 'Go version'
+    required: false
+    default: 1.16
+  VERSIONING:
+    description: 'True if version should be returned'
+    required: false
+    default: true
+  NOTIFYING_SLACK:
+    description: 'True if slack notification should be sent.'
+    required: false
+    default: true
+  SLACK_CHANNEL_ID:
+    description: 'Slack Channel ID.'
+    required: false
+    default: true
+
 runs:
   using: "composite"
   steps:
-    # - run: echo Hello ${{ inputs.who-to-greet }}.
-    #   shell: bash
-    # - id: random-number-generator
-    #   run: echo "::set-output name=random-id::$(echo $RANDOM)"
-    #   shell: bash
-    # - run: ${{ github.action_path }}/goodbye.sh
-    #   shell: bash
+    - name: Checkout Code
+      uses: actions/checkout@v2
 
+    - name: Setup Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ inputs.GO_VERSION }}
+
+    - name: Install Go Dependencies
+      run: go version
+
+    - name: Versioning
+      id: versioning
+      if: inputs.VERSIONING == 'true'
+      shell: bash
+      run: |
+        echo "ENV=$(echo ${GITHUB_REF##*/})" >> $GITHUB_ENV
+        echo "NODE_ENV=$(echo ${GITHUB_REF##*/})" >> $GITHUB_ENV
+        echo ::set-output name=app_version::$(make version)
+        
+    - name: Building
+      if: ${{ inputs.BUILDING }}
+      run: make docker-image
+  
     - name: Login to Google Artifact Registry
+      if: inputs.DELIVERING == "true"
       uses: docker/login-action@v1
       with:
         registry: ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev
@@ -43,6 +73,19 @@ runs:
         password: ${{ inputs.REGISTRY_SA_KEY }}
 
     - name: Push to Google Artifact Registry
+      if: inputs.DELIVERING == "true"
       shell: bash
       run: |
-        docker push ${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}
+        echo "${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}""
+
+    # - name: Deploys to Kubernetes Cluster
+    #   if: ${{ inputs.DEPLOYING }}
+    #   shell: bash
+    #   run: |
+    #     echo "${{ inputs.REPOSITORY_LOCATION }}-docker.pkg.dev/${{ inputs.PROJECT_ID }}/${{ inputs.REPOSITORY }}/${{ inputs.IMAGE }}:${{ inputs.TAG }}""
+
+    - name: Send Slack Notification
+      if: inputs.NOTIFYING_SLACK == "true"
+      shell: bash
+      run: |
+        echo "Send Slack Notification ${{ inputs.SLACK_CHANNEL_ID }}"
